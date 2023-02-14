@@ -1,0 +1,26 @@
+<html>
+
+<body>
+    <h1>Simple Web Search Engine</h1>
+    <div id="main" class="test">
+        <form action="/search" method="post">
+            <label>What do you want to search:</label>
+            <input type="text" name="input" autofocus="autofocus" value=""/>
+            <input type="submit" value="Submit">
+        </form>
+    </div>
+    <h1>Results:</h1>
+    <div>
+        {% for post in data.results %}
+
+        <p><a target="_blank" rel="noopener noreferrer" href="{{ url_for('static', filename=post[1]) }}">{{ post[0] }}</a></p>
+
+        {% endfor %}
+
+        <br>
+        <p>{{ data.ts }}</p>
+
+    </div>
+</body>
+
+</html>

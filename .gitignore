@@ -1,0 +1,10 @@
+*.zip
+*.pkl
+
+# everything in data dir
+data/
+.idea/
+__pycache__/
+generated_results/
+tmp/
+indexer_state/
