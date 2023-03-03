@@ -1,7 +1,8 @@
 import socket
 
 # Define the IP address and port number of the master node
-MASTER_IP = '169.234.51.185'
+#'169.234.58.158', '169.234.25.170'
+MASTER_IP = '169.234.58.158'
 MASTER_PORT = 5555
 
 def worker():
@@ -19,6 +20,8 @@ def worker():
 
             # Perform the task here
             print(f"Worker received task: {task}")
+            data = "from machine 1 ****** \n"
+            s.send(data.encode('utf-8'))
 
 if __name__ == '__main__':
     worker()
