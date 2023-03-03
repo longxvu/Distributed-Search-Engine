@@ -13,6 +13,7 @@ class Retriever:
         self.term_posting_map = None
         self.doc_id_disk_loc = None
         self.doc_id_url_map = None
+        self.total_num_doc = 0
         self.load_indexer_state(index_dir, doc_id_file, all_posting_file, term_posting_file)
         self.stemmer = None  # should be consistent with indexer stemmer
 
@@ -32,6 +33,7 @@ class Retriever:
             doc_id_state = pickle.load(f_in)
         self.doc_id_url_map = doc_id_state["url_map"]
         self.doc_id_disk_loc = doc_id_state["disk_loc"]
+        self.total_num_doc = len(self.doc_id_url_map)
 
     def load_posting_from_disk(self, term):
         if term not in self.term_posting_map:
@@ -42,6 +44,52 @@ class Retriever:
             content = f.read(posting_length)
         postings = parse_multiple_posting(content.decode("utf-8"))
         return postings
+
+    def ranked_retrieval(self, processed_query: List[str]):
+        doc_tf_idf_map = {}  # key: Document ID, value: TF-IDF value of common terms between query and doc
+        term_doc_id_map = {}
+        
+        # Get documents ID that are associated with this term
+        for token in processed_query:
+            posting_found = self.load_posting_from_disk(token)
+            if posting_found:
+                term_doc_id_map[token] = posting_found
+
+        if not term_doc_id_map:
+            return []
+        
+
+        for term, posting_lst in term_doc_id_map.items():
+            for posting in posting_lst:
+                doc_tf = 1 + math.log10(posting.term_freq)
+                doc_idf = math.log10(self.total_num_doc / len(posting_lst))
+                doc_tf_idf = doc_tf * doc_idf
+                doc_tf_idf_map[posting.doc_id] = doc_tf_idf_map.get(posting.doc_id, 0) + doc_tf_idf
+        
+        # doc_tf_idf_map = {k: v for k, v in sorted(doc_tf_idf_map.items(), key=lambda x: x[1], reverse=True)}
+        # print(list(doc_tf_idf_map.items())[:100])
+        return doc_tf_idf_map
+    
+    def term_ranked_retrieval(self, term: str):
+        doc_tf_idf_map = {}  # key: Document ID, value: TF-IDF value of common terms between query and doc
+        term_doc_id_map = None
+        
+        # Get documents ID that are associated with this term
+        term_all_postings = self.load_posting_from_disk(term)
+
+        if not term_doc_id_map:
+            return []
+        
+        for posting in term_all_postings:
+            doc_tf = 1 + math.log10(posting.term_freq)
+            doc_idf = math.log10(self.total_num_doc / len(term_all_postings))
+            doc_tf_idf_map[posting.doc_id] = doc_tf * doc_idf
+        
+        # doc_tf_idf_map = {k: v for k, v in sorted(doc_tf_idf_map.items(), key=lambda x: x[1], reverse=True)}
+        # print(list(doc_tf_idf_map.items())[:100])
+        return doc_tf_idf_map
+
+
 
     # boolean retrieval model:
     def boolean_retrieval(self, processed_query: List[str]):
@@ -109,8 +157,47 @@ class Retriever:
     def retrieve(self, query, top_k=5):
         processed_query = self.process_query(query)
         print(processed_query)
-        doc_ids = self.boolean_retrieval(processed_query)
-        # results = sorted(results, key=lambda x: x[1], reverse=True)
-        doc_id_results = [self.doc_id_url_map[doc_id] for doc_id in doc_ids]
-        disk_loc_results = [self.doc_id_disk_loc[doc_id] for doc_id in doc_ids]
+        doc_ids = self.ranked_retrieval(processed_query)
+        sorted_doc_ids = {k: v for k, v in sorted(doc_ids.items(), key=lambda x: x[1], reverse=True)}
+        doc_id_results = [self.doc_id_url_map[doc_id] for doc_id in sorted_doc_ids]
+        disk_loc_results = [self.doc_id_disk_loc[doc_id] for doc_id in sorted_doc_ids]
         return doc_id_results[:top_k], disk_loc_results[:top_k]
+    
+    def retrieve_multi_machine(self, query, top_k=5):
+        processed_query = self.process_query(query)
+        print(processed_query)
+
+        doc_tfidf_all = []
+        # Send each term to the each machine to process independently and getting tfidf map back
+        for token in processed_query:
+            doc_tfidf_all.append(self.term_ranked_retrieval(token))
+
+        # Get result from all machine and merge into a single tfidf map
+        doc_tfidf_map = {}
+        for doc_tfidf in doc_tfidf_all:
+            for doc_id in doc_tfidf:
+                if doc_id not in doc_tfidf_map:
+                    doc_tfidf_map[doc_id] = 0
+                doc_tfidf_map[doc_id] += doc_tfidf[doc_id]
+
+        doc_tfidf_map = sorted(doc_tfidf_map.items(), key=lambda x: x[1], reverse=True)
+        doc_id_results = [self.doc_id_url_map[doc_id] for doc_id in doc_tfidf_map]
+        disk_loc_results = [self.doc_id_disk_loc[doc_id] for doc_id in doc_tfidf_map]
+
+        return doc_id_results[:top_k], disk_loc_results[:top_k]
+
+
+if __name__ == "__main__":
+    from utils import parse_config
+    import time
+    default_config, data_config = parse_config()
+    indexer = Retriever(data_config["indexer_state_dir"],
+                        default_config["doc_id_file"],
+                        default_config["all_posting_file"],
+                        default_config["term_posting_map_file"])
+    
+    input_query = "information learning"
+    start = time.time()
+    results = indexer.retrieve(input_query, top_k=int(default_config["max_result"]))
+    print(f"{time.time() - start:.3f}s")
+    print(results)
