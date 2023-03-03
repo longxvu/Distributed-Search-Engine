@@ -1,8 +1,8 @@
 import socket
 
 # Define the IP addresses and port numbers of the worker nodes
-WORKER_IPS = ['128.195.42.102']
-WORKER_PORTS = [5852]
+WORKER_IPS = ['169.234.51.185']
+WORKER_PORTS = [5555]
 
 def master():
     # Create sockets and connect to each worker node
@@ -14,6 +14,8 @@ def master():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print('test from 14')
         s.connect((WORKER_IPS[i], WORKER_PORTS[i]))
+        response = s.receive(1024)
+        print(response.decode('utf-8'))
         print('test from 16')
         workers.append(s)
         print('Master connected to worker nodes', i)
