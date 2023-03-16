@@ -37,47 +37,105 @@ def new_worker_task(conn, address, query, query_idx=0):
 def server_accept_new_worker(server_socket):
     conn, address = server_socket.accept()
     print("Connection from: " + str(address))
+    # queue.put((conn, address))
     return conn, address
 
+def get_workers_connections(server_socket, num_workers=2):
+    # processes = []
+    # connections_queue = multiprocessing.Queue()
+
+    # # Spawn processes to get connections
+    # for _ in range(num_workers):
+    #     p = multiprocessing.Process(target=server_accept_new_worker, args=(server_socket, connections_queue,))
+    #     p.start()
+    #     processes.append(p)
+    # for p in processes:
+    #     p.join()
+
+    # connections = []
+    # while not connections_queue.empty():
+    #     connections.append(connections_queue.get())
+    
+    # Returning connection and addresses of connected workers
+    pool = multiprocessing.Pool(num_workers)
+
+    pool_res = pool.map(server_accept_new_worker, [server_socket] * num_workers)
+    connections, addresses = zip(*pool_res)
+    # connections, addresses = zip(*connections)
+    return list(connections), list(addresses)
 
 
-def distribute_task(query_list, num_workers=2):
+
+def distribute_task(query_list):
     server_socket = socket.socket()  # get instance
     # look closely. The bind() function takes tuple as argument
     server_socket.bind((host, port))  # bind host address and port together
 
     # configure how many client the server can listen simultaneously
-    server_socket.listen(num_workers)
+    NUM_WORKERS = 2
+    server_socket.listen(NUM_WORKERS)
 
     # define a pool of workers
-    pool = multiprocessing.Pool(num_workers)
+    # pool = multiprocessing.Pool(num_workers)
     # connect to all workers before distributing task
-    pool_res = pool.map(server_accept_new_worker, [server_socket] * num_workers)
-    connections, address = zip(*pool_res)
+    # pool_res = pool.map(server_accept_new_worker, [server_socket] * num_workers)
+    # connections, address = zip(*pool_res)
+
 
     # conn, address = server_socket.accept()  # accept new connection
     # worker_connections.append((conn, address))
 
-    print(f"{len(connections)} workers connected")
+    connections, addresses = get_workers_connections(server_socket, NUM_WORKERS)
+    print(connections)
+    print(addresses)
+
+    print(f"{NUM_WORKERS} workers connected")
     print("="*20)
+
+    workers_pool = []
+    async_results = [None] * NUM_WORKERS
+
+    for _ in range(NUM_WORKERS):
+        workers_pool.append(Pool(1))
 
     # print(connections)
     # print(address)
     # query_list
-    input_pool = []
-    idx = 0
+    input_pool = Queue()
     for query_idx, query in enumerate(query_list):
         # random idx?
         # idx = random.randint(0, num_workers - 1)
         # print(idx)
         # input_pool.append((connections[idx], address[idx], query))
         for token in query.split():
-            input_pool.append((connections[idx], address[idx], token, query_idx))
-            idx = (idx + 1) % num_workers
+            input_pool.put((token, query_idx))
 
-    print(input_pool)
+    while not input_pool.empty():
+        token, query_idx = input_pool.get()
+        processed = False
+        while not processed:
+            for idx in range(NUM_WORKERS):
+                # No task currently running
+                if not async_results[idx]:
+                    async_results[idx] = workers_pool[idx].apply_async(new_worker_task, 
+                                                                    (connections[idx], addresses[idx], token, query_idx))
+                else:
+                    # Worker is done, set results to None
+                    if async_results[idx].ready():
+                        result = async_results[idx].get()
+                        # do something with the result here
+                        async_results[idx] = None
+                        processed = True
+                    
+    for pool in workers_pool:
+        pool.close()
+        pool.join()
 
-    pool.starmap_async(new_worker_task, input_pool)
+
+    # print(input_pool)
+    # exit()
+
+    # pool.starmap_async(new_worker_task, input_pool)
     # start = time.time()
     # for inp in input_pool:
     #     pool.apply_async(new_worker_task, inp)
@@ -85,8 +143,8 @@ def distribute_task(query_list, num_workers=2):
 
     # print(f"Took {end - start:.3f}s")
 
-    pool.close()
-    pool.join()
+    # pool.close()
+    # pool.join()
 
 
     # while query list still have more stuffs?
