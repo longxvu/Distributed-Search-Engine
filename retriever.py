@@ -72,13 +72,13 @@ class Retriever:
     
     def term_ranked_retrieval(self, term: str):
         doc_tf_idf_map = {}  # key: Document ID, value: TF-IDF value of common terms between query and doc
-        term_doc_id_map = None
+        # term_doc_id_map = None
         
         # Get documents ID that are associated with this term
         term_all_postings = self.load_posting_from_disk(term)
 
-        if not term_doc_id_map:
-            return []
+        # if not term_doc_id_map:
+        #     return []
         
         for posting in term_all_postings:
             doc_tf = 1 + math.log10(posting.term_freq)
@@ -196,8 +196,9 @@ if __name__ == "__main__":
                         default_config["all_posting_file"],
                         default_config["term_posting_map_file"])
     
-    input_query = "information learning"
+    input_query = "computer"
     start = time.time()
-    results = indexer.retrieve(input_query, top_k=int(default_config["max_result"]))
+    # results = indexer.retrieve(input_query, top_k=int(default_config["max_result"]))
+    results = indexer.term_ranked_retrieval(input_query)
     print(f"{time.time() - start:.3f}s")
     print(results)

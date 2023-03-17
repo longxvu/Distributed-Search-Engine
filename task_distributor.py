@@ -3,10 +3,15 @@ import socket
 from multiprocessing import Process, Pool, Queue
 import random
 import time
+import pickle
+from utils import parse_config
+from retriever import Retriever
 
 # get the hostname
 host = socket.gethostname()  # localhost for now
 port = 5000  # initiate port no above 1024
+RECEIVE_MESSAGE_BUFFER_SIZE = 4096
+NUM_WORKERS = 3
 
 def get_input_list(file_path):
     with open(file_path) as f:
@@ -24,15 +29,17 @@ def new_worker_task(conn, address, query, query_idx=0):
     #         # if data is not received break
     #         # break
     conn.send(query.encode())  # send data to the client
-    data = conn.recv(1024).decode()
+    receiving_message_size = int(conn.recv(1024).decode())
+    result = conn.recv(receiving_message_size)
+    result = pickle.loads(result)
         # if not data:
         #     break
-    print(f"Message from {address}: {data}")
+    print(f"Message from {address}: {result}")
 
         # print("from connected user: " + str(data))
         # data = input(' -> ')
     # conn.close()  # close the connection
-    return data, query_idx
+    return result, query_idx
 
 def server_accept_new_worker(server_socket):
     conn, address = server_socket.accept()
@@ -72,7 +79,6 @@ def distribute_task(query_list):
     server_socket.bind((host, port))  # bind host address and port together
 
     # configure how many client the server can listen simultaneously
-    NUM_WORKERS = 2
     server_socket.listen(NUM_WORKERS)
 
     # define a pool of workers
@@ -102,12 +108,14 @@ def distribute_task(query_list):
     # print(address)
     # query_list
     input_pool = Queue()
+    result_lst = [[] for _ in range(len(query_list))]
+
     for query_idx, query in enumerate(query_list):
         # random idx?
         # idx = random.randint(0, num_workers - 1)
         # print(idx)
         # input_pool.append((connections[idx], address[idx], query))
-        for token in query.split():
+        for token in query:
             input_pool.put((token, query_idx))
 
     while not input_pool.empty():
@@ -117,20 +125,69 @@ def distribute_task(query_list):
             for idx in range(NUM_WORKERS):
                 # No task currently running
                 if not async_results[idx]:
-                    async_results[idx] = workers_pool[idx].apply_async(new_worker_task, 
-                                                                    (connections[idx], addresses[idx], token, query_idx))
+                    async_results[idx] = workers_pool[idx].apply_async(new_worker_task,
+                                                                       (connections[idx], addresses[idx], token, query_idx))
+                    # Term is processed, let's skip to next term
+                    processed = True
+                    break
                 else:
                     # Worker is done, set results to None
                     if async_results[idx].ready():
-                        result = async_results[idx].get()
+                        result, token_idx = async_results[idx].get()
+                        # print(result)
                         # do something with the result here
+                        result_lst[token_idx].append(result)
                         async_results[idx] = None
                         processed = True
-                    
+
+    # Waiting for all results to complete running
+    while True:
+        all_complete = True
+        for idx, async_result in enumerate(async_results):
+            if async_result:
+                if async_result.ready():
+                    result, token_idx = async_result.get()
+                    result_lst[token_idx].append(result)
+                    async_results[idx] = None
+                else:
+                    all_complete = False
+        if all_complete:
+            break
+
+
+    # Closing the pool workers pool
     for pool in workers_pool:
         pool.close()
         pool.join()
 
+    # Merge all the result now
+    doc_tf_idf_maps = []
+    for token_tf_idf_lst in result_lst:  # each result contains multiple tokens
+        doc_tf_idf_map = {}
+        for tokens_tf_idf in token_tf_idf_lst:  # for each token in token tf idf list
+            for doc_id in tokens_tf_idf:  # doc id for each token
+                if doc_id not in doc_tf_idf_map:
+                    doc_tf_idf_map[doc_id] = tokens_tf_idf[doc_id]
+                else:
+                    doc_tf_idf_map[doc_id] += tokens_tf_idf[doc_id]
+        doc_tf_idf_maps.append(doc_tf_idf_map)
+
+    # Closing server connections
+    server_socket.close()
+
+    for idx in range(len(doc_tf_idf_maps)):
+        doc_tf_idf_maps[idx] = sorted(doc_tf_idf_maps[idx].items(), key=lambda x: x[1], reverse=True)
+        doc_tf_idf_maps[idx] = doc_tf_idf_maps[idx][:5]
+
+    # doc_id[0] because doc_id is a tuple of (doc_id, tf_idf_score)
+    doc_id_results = [[retriever.doc_id_url_map[doc_id[0]] for doc_id in doc_tf_idf_map] for doc_tf_idf_map in doc_tf_idf_maps]
+    disk_loc_results = [[retriever.doc_id_disk_loc[doc_id[0]] for doc_id in doc_tf_idf_map] for doc_tf_idf_map in doc_tf_idf_maps]
+
+    for idx in range(len(doc_id_results)):
+        print(f"Query: {query_list[idx]}")
+        for url, disk_loc in zip(doc_id_results[idx], disk_loc_results[idx]):
+            print(url, disk_loc)
+        print("====================================")
 
     # print(input_pool)
     # exit()
@@ -156,6 +213,17 @@ def distribute_task(query_list):
 
 
 if __name__ == '__main__':
+    # Getting query input
     input_file_path = "query.txt"
-    input_lst = get_input_list(input_file_path)
-    distribute_task(input_lst)
+    query_lst = get_input_list(input_file_path)
+
+    default_config, data_config = parse_config()
+    retriever = Retriever(data_config["indexer_state_dir"],
+                        default_config["doc_id_file"],
+                        default_config["all_posting_file"],
+                        default_config["term_posting_map_file"])
+    print("Retriever state loaded")
+    query_lst = [retriever.process_query(query) for query in query_lst]
+    print(query_lst)
+    # distribute all the task
+    distribute_task(query_lst)

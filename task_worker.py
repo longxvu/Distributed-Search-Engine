@@ -2,11 +2,18 @@ import socket
 import time
 import random
 import sys
+import pickle
+from utils import parse_config
+from retriever import Retriever
 
 host = socket.gethostname()  # localhost
 port = 5000  # socket server port number
 
-def receive_task():
+def sleep_args():
+    if len(sys.argv) >= 2:
+        time.sleep(float(sys.argv[1]))
+
+def receive_task(retriever):
     client_socket = socket.socket()  # instantiate
     client_socket.connect((host, port))  # connect to the server
 
@@ -21,14 +28,27 @@ def receive_task():
         # time.sleep(sleep_duration)
         # print(f"Slept for {sleep_duration}")
         print('Received from server: ' + data)  # show in terminal
-        time.sleep(float(sys.argv[1]))
+        # time.sleep(float(sys.argv[1]))
         if not data:
             break
 
-        client_socket.send(f"{data} {sys.argv[1]} {time.time()}".upper().encode())
+        # print(data)
+        result = retriever.term_ranked_retrieval(data)
+        # print(result)
+        sending_data = pickle.dumps(result)
+        send_data_size = f"{len(sending_data)}".encode()
+
+        client_socket.send(send_data_size)
+        client_socket.send(sending_data)
 
     client_socket.close()  # close the connection
 
 
 if __name__ == '__main__':
-    receive_task()
+    default_config, data_config = parse_config()
+    retriever = Retriever(data_config["indexer_state_dir"],
+                        default_config["doc_id_file"],
+                        default_config["all_posting_file"],
+                        default_config["term_posting_map_file"])
+    print("Retriever state loaded")
+    receive_task(retriever)
