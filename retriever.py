@@ -77,16 +77,12 @@ class Retriever:
         # Get documents ID that are associated with this term
         term_all_postings = self.load_posting_from_disk(term)
 
-        # if not term_doc_id_map:
-        #     return []
-        
-        for posting in term_all_postings:
-            doc_tf = 1 + math.log10(posting.term_freq)
-            doc_idf = math.log10(self.total_num_doc / len(term_all_postings))
-            doc_tf_idf_map[posting.doc_id] = doc_tf * doc_idf
-        
-        # doc_tf_idf_map = {k: v for k, v in sorted(doc_tf_idf_map.items(), key=lambda x: x[1], reverse=True)}
-        # print(list(doc_tf_idf_map.items())[:100])
+        if term_all_postings:
+            for posting in term_all_postings:
+                doc_tf = 1 + math.log10(posting.term_freq)
+                doc_idf = math.log10(self.total_num_doc / len(term_all_postings))
+                doc_tf_idf_map[posting.doc_id] = doc_tf * doc_idf
+
         return doc_tf_idf_map
 
 

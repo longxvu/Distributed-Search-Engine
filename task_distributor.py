@@ -84,6 +84,7 @@ def distribute_task(query_list):
                     async_results[idx] = workers_pool[idx].apply_async(new_worker_task,
                                                                        (connections[idx], addresses[idx], token, query_idx))
                     # Term is processed, let's skip to next term
+                    print(f"Sending [{token}] to {addresses[idx]}")
                     processed = True
                     break
                 else:
@@ -92,7 +93,6 @@ def distribute_task(query_list):
                         result, token_idx = async_results[idx].get()
                         result_lst[token_idx].append(result)
                         async_results[idx] = None
-                        processed = True
 
     # Waiting for all results to complete running
     while True:
@@ -146,7 +146,7 @@ def distribute_task(query_list):
 
 if __name__ == '__main__':
     # Getting query input
-    input_file_path = "query.txt"
+    input_file_path = "query2.txt"
     query_lst = get_input_list(input_file_path)
 
     default_config, data_config = parse_config()
