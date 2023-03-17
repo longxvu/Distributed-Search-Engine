@@ -11,7 +11,7 @@ from retriever import Retriever
 host = socket.gethostname()  # localhost for now
 port = 5000  # initiate port no above 1024
 RECEIVE_MESSAGE_BUFFER_SIZE = 4096
-NUM_WORKERS = 3
+NUM_WORKERS = 1
 
 def get_input_list(file_path):
     with open(file_path) as f:
@@ -20,58 +20,29 @@ def get_input_list(file_path):
     return data
 
 def new_worker_task(conn, address, query, query_idx=0):
-    # Client should wait for the data, and server should continuously send the data
-    # print("Message from: " + str(address))
-    # while True:
-    #     # receive data stream. it won't accept data packet greater than 1024 bytes
-    #     # data = conn.recv(1024).decode()
-    #     # if not data:
-    #         # if data is not received break
-    #         # break
+    # Send the term or query
     conn.send(query.encode())  # send data to the client
+
+    # Receive size of dict first, and actual content of dict second
     receiving_message_size = int(conn.recv(1024).decode())
     result = conn.recv(receiving_message_size)
     result = pickle.loads(result)
-        # if not data:
-        #     break
-    print(f"Message from {address}: {result}")
 
-        # print("from connected user: " + str(data))
-        # data = input(' -> ')
-    # conn.close()  # close the connection
+    print(f"Message from {address}: {result}")
     return result, query_idx
 
 def server_accept_new_worker(server_socket):
     conn, address = server_socket.accept()
     print("Connection from: " + str(address))
-    # queue.put((conn, address))
     return conn, address
 
 def get_workers_connections(server_socket, num_workers=2):
-    # processes = []
-    # connections_queue = multiprocessing.Queue()
-
-    # # Spawn processes to get connections
-    # for _ in range(num_workers):
-    #     p = multiprocessing.Process(target=server_accept_new_worker, args=(server_socket, connections_queue,))
-    #     p.start()
-    #     processes.append(p)
-    # for p in processes:
-    #     p.join()
-
-    # connections = []
-    # while not connections_queue.empty():
-    #     connections.append(connections_queue.get())
-    
-    # Returning connection and addresses of connected workers
     pool = multiprocessing.Pool(num_workers)
 
+    # Need pool map since we want the main process blocked until everything connects
     pool_res = pool.map(server_accept_new_worker, [server_socket] * num_workers)
     connections, addresses = zip(*pool_res)
-    # connections, addresses = zip(*connections)
     return list(connections), list(addresses)
-
-
 
 def distribute_task(query_list):
     server_socket = socket.socket()  # get instance
@@ -81,18 +52,8 @@ def distribute_task(query_list):
     # configure how many client the server can listen simultaneously
     server_socket.listen(NUM_WORKERS)
 
-    # define a pool of workers
-    # pool = multiprocessing.Pool(num_workers)
-    # connect to all workers before distributing task
-    # pool_res = pool.map(server_accept_new_worker, [server_socket] * num_workers)
-    # connections, address = zip(*pool_res)
-
-
-    # conn, address = server_socket.accept()  # accept new connection
-    # worker_connections.append((conn, address))
-
     connections, addresses = get_workers_connections(server_socket, NUM_WORKERS)
-    print(connections)
+    # print(connections)
     print(addresses)
 
     print(f"{NUM_WORKERS} workers connected")
@@ -100,24 +61,19 @@ def distribute_task(query_list):
 
     workers_pool = []
     async_results = [None] * NUM_WORKERS
-
+    # Each worker has a separate pool of process
     for _ in range(NUM_WORKERS):
         workers_pool.append(Pool(1))
 
-    # print(connections)
-    # print(address)
-    # query_list
     input_pool = Queue()
     result_lst = [[] for _ in range(len(query_list))]
 
+    # Put all input into a queue
     for query_idx, query in enumerate(query_list):
-        # random idx?
-        # idx = random.randint(0, num_workers - 1)
-        # print(idx)
-        # input_pool.append((connections[idx], address[idx], query))
         for token in query:
             input_pool.put((token, query_idx))
 
+    # Round-robin distributing each term to the process
     while not input_pool.empty():
         token, query_idx = input_pool.get()
         processed = False
@@ -134,8 +90,6 @@ def distribute_task(query_list):
                     # Worker is done, set results to None
                     if async_results[idx].ready():
                         result, token_idx = async_results[idx].get()
-                        # print(result)
-                        # do something with the result here
                         result_lst[token_idx].append(result)
                         async_results[idx] = None
                         processed = True
@@ -153,7 +107,6 @@ def distribute_task(query_list):
                     all_complete = False
         if all_complete:
             break
-
 
     # Closing the pool workers pool
     for pool in workers_pool:
@@ -175,6 +128,7 @@ def distribute_task(query_list):
     # Closing server connections
     server_socket.close()
 
+    # Sorting and returning top k
     for idx in range(len(doc_tf_idf_maps)):
         doc_tf_idf_maps[idx] = sorted(doc_tf_idf_maps[idx].items(), key=lambda x: x[1], reverse=True)
         doc_tf_idf_maps[idx] = doc_tf_idf_maps[idx][:5]
@@ -188,28 +142,6 @@ def distribute_task(query_list):
         for url, disk_loc in zip(doc_id_results[idx], disk_loc_results[idx]):
             print(url, disk_loc)
         print("====================================")
-
-    # print(input_pool)
-    # exit()
-
-    # pool.starmap_async(new_worker_task, input_pool)
-    # start = time.time()
-    # for inp in input_pool:
-    #     pool.apply_async(new_worker_task, inp)
-    # end = time.time()
-
-    # print(f"Took {end - start:.3f}s")
-
-    # pool.close()
-    # pool.join()
-
-
-    # while query list still have more stuffs?
-    # for query in query_list:
-    #     p = Process(target=new_worker_task, args=(conn, address, query,))
-    #     p.start()
-    #     p.join()
-    #     print("One done")
 
 
 if __name__ == '__main__':

@@ -17,27 +17,20 @@ def receive_task(retriever):
     client_socket = socket.socket()  # instantiate
     client_socket.connect((host, port))  # connect to the server
 
-    # message = input(" -> ")  # take input
-
-    # Receiving the data
     while True:
         data = client_socket.recv(1024).decode()
-        # client_socket.send(message.encode())  # send message
-        # receive response
-        # sleep_duration = random.random()
-        # time.sleep(sleep_duration)
-        # print(f"Slept for {sleep_duration}")
         print('Received from server: ' + data)  # show in terminal
-        # time.sleep(float(sys.argv[1]))
+
+        sleep_args()
         if not data:
             break
 
-        # print(data)
         result = retriever.term_ranked_retrieval(data)
         # print(result)
         sending_data = pickle.dumps(result)
         send_data_size = f"{len(sending_data)}".encode()
 
+        # Send data size first, then sends data
         client_socket.send(send_data_size)
         client_socket.send(sending_data)
 
