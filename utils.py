@@ -18,7 +18,7 @@ def parse_config(config_file="config/config.ini"):
     config = configparser.ConfigParser()
     config.read(config_file)
     default_config = config["DEFAULT"]
-    data_config = config[args.config]
+    data_config = config[default_config["default_data_config"]]
 
     return default_config, data_config
 

@@ -18,6 +18,10 @@ def receive_task(retriever):
     client_socket.connect((host, port))  # connect to the server
 
     while True:
+        term_distributed = client_socket.recv(1024).decode()
+        if not term_distributed:
+            break
+        term_distributed = True if term_distributed == "1" else False
         data = client_socket.recv(1024).decode()
         print('Received from server: ' + data)  # show in terminal
 
@@ -25,7 +29,11 @@ def receive_task(retriever):
         if not data:
             break
 
-        result = retriever.term_ranked_retrieval(data)
+        if term_distributed:
+            result = retriever.term_ranked_retrieval(data)
+        else:
+            result = retriever.retrieve(data)
+
         # print(result)
         sending_data = pickle.dumps(result)
         send_data_size = f"{len(sending_data)}".encode()

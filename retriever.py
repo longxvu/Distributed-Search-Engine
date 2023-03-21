@@ -150,10 +150,12 @@ class Retriever:
         return processed_query
 
     # Retrieve top k result from search query using boolean retrieval model
-    def retrieve(self, query, top_k=5):
+    def retrieve(self, query, top_k=5, return_tf_idf_map=True):
         processed_query = self.process_query(query)
         print(processed_query)
         doc_ids = self.ranked_retrieval(processed_query)
+        if return_tf_idf_map:
+            return doc_ids
         sorted_doc_ids = {k: v for k, v in sorted(doc_ids.items(), key=lambda x: x[1], reverse=True)}
         doc_id_results = [self.doc_id_url_map[doc_id] for doc_id in sorted_doc_ids]
         disk_loc_results = [self.doc_id_disk_loc[doc_id] for doc_id in sorted_doc_ids]
@@ -192,9 +194,12 @@ if __name__ == "__main__":
                         default_config["all_posting_file"],
                         default_config["term_posting_map_file"])
     
+    # start = time.time()
+    # print(f"{time.time() - start:.3f}s")
     input_query = "computer"
-    start = time.time()
-    # results = indexer.retrieve(input_query, top_k=int(default_config["max_result"]))
     results = indexer.term_ranked_retrieval(input_query)
-    print(f"{time.time() - start:.3f}s")
+    print(results)
+
+    input_query = "distributed systems"
+    results = indexer.retrieve(input_query, top_k=int(default_config["max_result"]))
     print(results)
